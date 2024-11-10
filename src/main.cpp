@@ -46,6 +46,29 @@ enum state_fsm{
   CONFIG
 };
 
+void print_state(fsm_t fsm){
+
+  switch(fsm.state){
+
+    case START:
+      Serial.print("START");
+      break;
+    case COUNTDOWN:
+      Serial.print("COUNTDOWN");
+      break;
+    case FREEZE:
+      Serial.print("FREEZE");
+      break;
+    case BLINK:
+      Serial.print("BLINK");
+      break;
+    case CONFIG:
+      Serial.print("CONFIG");
+      break;
+    
+  }
+}
+
 // update state of a fsm
 // update tes and tis in case the state changes
 bool set_state(fsm_t &fsm1){
@@ -113,6 +136,25 @@ void update_timer(tmr_t &tmr, bool val){
   }
 }
 
+#define NTYPES 3
+#define NOPTIONS1 3
+#define NOPTIONS2 3
+#define NOPTIONS3 4
+
+// struct for configuration
+// types: {options}
+// 0 -> T_countdown: {0 -> 1s | 1 -> 2s | 2 -> 5s | 3 -> 10s}
+// 1 -> effect:      {0 -> SWITCHOFF | 1 -> FASTBLINK | 2 -> FADEOUT}
+// 2 -> color:       {0 -> BLUE | 1 -> GREEN | 2 -> YELLOW | 3 -> WHITE}
+typedef struct{
+
+  int type = 0;
+  int optionsInType[NTYPES] = {NOPTIONS1, NOPTIONS2, NOPTIONS3};
+  int option[NTYPES] = {1, 0, 1}; // (2s, SWITCHOFF, GREEN) -> initial configuration
+} config_t;
+
+config_t config, config_aux;
+
 char Serial_in = '-';
 
 void setup(){
@@ -131,13 +173,13 @@ void setup(){
   timer_Smore.on = false;
 
   pixels.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
+
 }
 
 void loop(){
 
   // update timer_control
   update_timer(timer_control, true);
-  Serial.println(timer_control.tit);
   if(timer_control.tit >= T_control){
 
     // reset timer_control
@@ -203,7 +245,12 @@ void loop(){
 
       fsm.new_state = START;
       set_state(fsm);
-      // TODO - discard new config
+      // TODO - discard new config, recover old config saved in config_aux
+      config.type = config_aux.type;
+      for(int i = 0 ; i < NTYPES ; i++){
+
+        config.option[i] = config_aux.option[i];
+      }
     }
     else if((fsm.state == CONFIG) && ((timer_Smore.tit >= T_Smore) || (Serial_in == 's'))){
 
@@ -211,7 +258,7 @@ void loop(){
       set_state(fsm);
       // reset timer_Smore
       update_timer(timer_Smore, false);
-      // TODO - save new config
+      // save new config -> done
     }
     else if((fsm.state != CONFIG) && ((timer_Smore.tit >= T_Smore) || (Serial_in == 'c'))){
 
@@ -219,6 +266,28 @@ void loop(){
       set_state(fsm);
       // reset timer_Smore
       update_timer(timer_Smore, false);
+      // save current config in config_aux
+      config_aux.type = config.type;
+      for(int i = 0 ; i < NTYPES ; i++){
+
+        config_aux.option[i] = config.option[i];
+      }
+    }
+    else if((fsm.state == COUNTDOWN) && (Smore_FE || (Serial_in == 'm'))){
+
+      fsm.tes += T_countdown;
+      // dont let tes exceed millis()
+      if(fsm.tes > millis()) fsm.tes = millis();
+    }
+    else if((fsm.state == CONFIG) && Smore_RE){
+
+      // TODO: go to next type of configuration
+      config.type = (config.type+1)%NTYPES;
+    }
+    else if((fsm.state == CONFIG) && Sgo_RE){
+
+      // TODO: go to next option of configuration (within the same type)
+      config.option[config.type] = (config.option[config.type]+1)%config.optionsInType[config.type];
     }
 
     // print state for debugging
@@ -227,8 +296,15 @@ void loop(){
 
       pixels.setPixelColor(i, pixels.Color(0, 0, 0));
     }
-    pixels.setPixelColor(fsm.state, pixels.Color(50, 0, 0));
+    pixels.setPixelColor(fsm.state, pixels.Color(0, 0, 50));
+    
     pixels.show();   // Send the updated pixel colors to the hardware.
-    Serial.println(fsm.state);
+    print_state(fsm);
+    Serial.print(" ");
+    Serial.print(config.type);
+    Serial.print(config.option[config.type]);
+    Serial.print(" ");
+    for(int i = 0 ; i < NTYPES ; i++) Serial.print(config.option[i]);
+    Serial.println();    
   }
 }
