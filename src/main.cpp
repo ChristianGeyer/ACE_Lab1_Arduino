@@ -233,6 +233,7 @@ void setup(){
   pinMode(Sesc_pin, INPUT_PULLUP);
   pinMode(Smore_pin, INPUT_PULLUP);
 
+  N = 3;
   N = min(N, MAXIMUM_NUM_NEOPIXELS); // upper limit for N: MAXIMUM_NUM_NEOPIXELS
   if(N < 1) N = 1; // assert that N >= 1
 
@@ -491,11 +492,11 @@ void loop(){
     else if(fsm.state == CONFIG){
 
       for(int i = 0 ; i < MAXIMUM_NUM_NEOPIXELS ; i++) led[i].on = false;
-      led[MAXIMUM_NUM_NEOPIXELS-1].on = blink(fsm.tis, f_config);
-      led[MAXIMUM_NUM_NEOPIXELS-1].intensity = led_intensity;
-      led[MAXIMUM_NUM_NEOPIXELS-1].color = config.type;
+      led[N-1].on = blink(fsm.tis, f_config);
+      led[N-1].intensity = led_intensity;
+      led[N-1].color = config.type;
 
-      for(int i = 0 ; i <= config.option[config.type] ; i++){
+      for(int i = 0 ; i <= min(config.option[config.type], N) ; i++){
 
         led[i].on = true;
         led[i].intensity = led_intensity;
