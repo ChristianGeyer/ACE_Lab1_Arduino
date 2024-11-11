@@ -81,12 +81,6 @@ bool set_state(fsm_t &fsm1){
   }
 }
 
-// update tis of a fsm
-void update_tis(fsm_t &fsm1){
-
-  fsm1.tis = millis()-fsm1.tes;
-}
-
 // inputs
 bool Sgo, Sesc, Smore;
 bool Sgo_prev, Sesc_prev, Smore_prev;
@@ -105,9 +99,9 @@ typedef struct{
 tmr_t timer_Smore, timer_control;
 
 uint16_t T_control = 50; // time interval between control cycles
-uint16_t T_countdown = 500; // time between leds turning off during COUNTDOWN
-uint16_t T_blink = 1000; // time to stay in BLINK state
-uint16_t T_Smore = 2000;
+uint16_t T_countdown = 2000; // time between leds turning off during COUNTDOWN
+uint16_t T_blink = 5000; // time to stay in BLINK state
+uint16_t T_Smore = 3000;
 
 // update on, tit and tet based on boolean expression (val)
 void update_timer(tmr_t &tmr, bool val){
@@ -137,9 +131,11 @@ void update_timer(tmr_t &tmr, bool val){
 }
 
 #define NTYPES 3
-#define NOPTIONS1 3
+#define NOPTIONS1 4
 #define NOPTIONS2 3
 #define NOPTIONS3 4
+
+uint16_t T_countdown_v[NOPTIONS1] = {1000, 2000, 5000, 10000};
 
 // struct for configuration
 // types: {options}
@@ -155,7 +151,80 @@ typedef struct{
 
 config_t config, config_aux;
 
+enum led_color{
+
+  BLUE,
+  GREEN,
+  YELLOW,
+  WHITE,
+  RED
+};
+
+// struct for output (leds)
+typedef struct{
+
+  bool on;
+  int index;
+  int intensity;
+  int color;
+  int r, g, b;
+}led_t;
+
+led_t led[MAXIMUM_NUM_NEOPIXELS];
+
+int led_intensity = 50;
+
+void update_rgb(led_t &led){
+
+  switch(led.color){
+
+    case BLUE:
+      led.r = 0;
+      led.g = 0;
+      led.b = led.intensity;
+      break;
+    case GREEN:
+      led.r = 0;
+      led.g = led.intensity;
+      led.b = 0;
+      break;
+    case YELLOW:
+      led.r = led.intensity;
+      led.g = led.intensity;
+      led.b = 0;
+      break;
+    case WHITE:
+      led.r = led.intensity;
+      led.g = led.intensity;
+      led.b = led.intensity;
+      break;
+    case RED:
+      led.r = led.intensity;
+      led.g = 0;
+      led.b = 0;
+      break;
+  }
+}
+
+bool blink(double t, double f){
+
+  double T = 1000/f;
+  return int(t)%int(T) < int(T/2);
+}
+
+int f_fastblink = 3;
+int f_blink = 2; // 3 Hz
+int f_freeze = 1;
+int f_config = 1;
+
 char Serial_in = '-';
+
+// update tis of a fsm
+void update_tis(fsm_t &fsm1){
+
+  fsm1.tis = millis()-fsm1.tes;
+  if(fsm1.tis > (uint16_t)(-T_countdown)) fsm1.tis = 0;
+}
 
 void setup(){
 
@@ -165,6 +234,14 @@ void setup(){
   pinMode(Smore_pin, INPUT_PULLUP);
 
   N = min(N, MAXIMUM_NUM_NEOPIXELS); // upper limit for N: MAXIMUM_NUM_NEOPIXELS
+  if(N < 1) N = 1; // assert that N >= 1
+
+  // initialize leds
+  for(int i = 0 ; i < N ; i++){
+
+    led[i].on = false;
+    led[i].index = N-i-1;
+  }
 
   fsm.new_state = START;
   set_state(fsm);
@@ -173,7 +250,6 @@ void setup(){
   timer_Smore.on = false;
 
   pixels.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
-
 }
 
 void loop(){
@@ -235,6 +311,7 @@ void loop(){
       fsm.new_state = COUNTDOWN;
       set_state(fsm);
       fsm.tes = millis()-prev_tis;
+      update_tis(fsm);
     }
     else if((fsm.state == BLINK) && (Sgo_RE || (Serial_in == 'g') || (fsm.tis >= T_blink))){
 
@@ -278,8 +355,9 @@ void loop(){
       fsm.tes += T_countdown;
       // dont let tes exceed millis()
       if(fsm.tes > millis()) fsm.tes = millis();
+      update_tis(fsm);
     }
-    else if((fsm.state == CONFIG) && Smore_RE){
+    else if((fsm.state == CONFIG) && (Smore_RE || (Serial_in == 'm'))){
 
       // TODO: go to next type of configuration
       config.type = (config.type+1)%NTYPES;
@@ -289,22 +367,177 @@ void loop(){
       // TODO: go to next option of configuration (within the same type)
       config.option[config.type] = (config.option[config.type]+1)%config.optionsInType[config.type];
     }
+    else if((fsm.state == CONFIG) && (config.type == 0)){
 
-    // print state for debugging
+      switch(Serial_in){
 
+        case '1':
+          config.option[0] = 0;
+          break;
+        case '2':
+          config.option[0] = 1;
+          break;
+        case '5':
+          config.option[0] = 2;
+          break;
+        case 'A':
+          config.option[0] = 3;
+          break;
+      }
+    }
+    else if((fsm.state == CONFIG) && (config.type == 1)){
+
+      switch(Serial_in){
+
+        case 'o':
+          config.option[1] = 0;
+          break;
+        case 'b':
+          config.option[1] = 1;
+          break;
+        case 'f':
+          config.option[1] = 2;
+          break;
+      }
+    }
+    else if((fsm.state == CONFIG) && (config.type == 2)){
+
+      switch(Serial_in){
+
+        case 'B':
+          config.option[2] = 0;
+          break;
+        case 'G':
+          config.option[2] = 1;
+          break;
+        case 'Y':
+          config.option[2] = 2;
+          break;
+        case 'W':
+          config.option[2] = 3;
+          break;
+      }
+    }
+
+    // update config of T_countdown
+    T_countdown = T_countdown_v[config.option[0]];
+
+    // computes outputs
+    if(fsm.state == START){
+
+      for(int i = 0 ; i < N ; i++){
+
+        led[i].on = false;
+      }
+    }
+    else if(fsm.state == COUNTDOWN){
+
+      for(int i = 0 ; i < N ; i++){
+
+        led[i].on = fsm.tis<((i+1)*T_countdown);
+        led[i].intensity = led_intensity;
+        led[i].color = config.option[2];
+      }
+      // different configs
+      if(config.option[1] == 1){ // FASTBLINK
+
+        for(int i = 0 ; i < N ; i++){
+
+          if(!led[i].on){
+
+            led[i].on = blink(fsm.tis, f_fastblink);
+            led[i].color = RED;
+          }
+        }
+      }
+
+      else if(config.option[1] == 2){ // FADEOUT
+
+        for(int i = 0 ; i < N ; i++){
+
+          if((fsm.tis > i*T_countdown) && (fsm.tis < (i+1)*T_countdown)){
+            
+            led[i].intensity = (int)((double)led_intensity*((i+1)-(double)fsm.tis/T_countdown));
+          }
+        }
+      }
+    }
+    else if(fsm.state == BLINK){
+
+      for(int i = 0 ; i < N ; i++){
+
+        led[i].on = blink(fsm.tis, f_blink);
+        led[i].intensity = led_intensity;
+        led[i].color = RED;
+      }
+    }
+    else if(fsm.state == FREEZE){
+
+      for(int i = 0 ; i < N ; i++){
+
+        led[i].on = prev_tis < (i+1)*T_countdown;
+        led[i].intensity = led_intensity;
+        led[i].color = config.option[2];
+      }
+
+      for(int i = 0 ; i < N ; i++){
+
+        if(led[i].on){
+
+          led[i].on = blink(fsm.tis, f_freeze);
+        }
+      }
+    }
+    else if(fsm.state == CONFIG){
+
+      for(int i = 0 ; i < MAXIMUM_NUM_NEOPIXELS ; i++) led[i].on = false;
+      led[MAXIMUM_NUM_NEOPIXELS-1].on = blink(fsm.tis, f_config);
+      led[MAXIMUM_NUM_NEOPIXELS-1].intensity = led_intensity;
+      led[MAXIMUM_NUM_NEOPIXELS-1].color = config.type;
+
+      for(int i = 0 ; i <= config.option[config.type] ; i++){
+
+        led[i].on = true;
+        led[i].intensity = led_intensity;
+        led[i].color = config.type;
+      }
+    }
+
+    // update rgb values
     for(int i = 0 ; i < N ; i++){
+
+      update_rgb(led[i]);
+    }
+
+    // show color in led
+    for(int i = 0 ; i < MAXIMUM_NUM_NEOPIXELS ; i++){
 
       pixels.setPixelColor(i, pixels.Color(0, 0, 0));
     }
-    pixels.setPixelColor(fsm.state, pixels.Color(0, 0, 50));
-    
-    pixels.show();   // Send the updated pixel colors to the hardware.
+
+    for(int i = 0 ; i < N ; i++){
+
+      if(led[i].on) pixels.setPixelColor(led[i].index, pixels.Color(led[i].r, led[i].g, led[i].b));
+    }
+    pixels.show();
+
+    // print state for debugging
     print_state(fsm);
     Serial.print(" ");
     Serial.print(config.type);
     Serial.print(config.option[config.type]);
     Serial.print(" ");
     for(int i = 0 ; i < NTYPES ; i++) Serial.print(config.option[i]);
+    Serial.print(" ");
+    for(int i = 0 ; i < N ; i++){
+
+      Serial.print(led[i].on);
+      Serial.print(led[i].intensity);
+      Serial.print(led[i].r);
+      Serial.print(led[i].g);
+      Serial.print(led[i].b);
+      Serial.print(" ");
+    }
     Serial.println();    
   }
 }
